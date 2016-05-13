@@ -1,0 +1,9 @@
+# gitignore
+
+!.gitignore
+
+# Mac
+.DS_Store
+
+# Build
+instapaper
