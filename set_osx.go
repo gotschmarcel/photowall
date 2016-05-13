@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 )
 
-func updateSystemWallpaper() {
+func setSystemWallpaper() {
 	wpFile := filepath.Join(cacheDir, wallpaperName)
 	wpFile, err := filepath.Abs(wpFile)
 	fatalIf(err)

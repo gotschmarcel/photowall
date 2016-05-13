@@ -40,6 +40,7 @@ var (
 	gridSpacing   float64
 	gridCols      int
 	outputQuality int
+	setWallpaper  bool
 	bgColor       color.RGBA
 
 	wallpaperName = fmt.Sprintf("wallpaper_%d.jpg", time.Now().Unix())
@@ -60,6 +61,7 @@ func init() {
 	flag.Float64Var(&gridSize, "grid", 212.0, "Grid size")
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
 	flag.IntVar(&outputQuality, "q", 90, "Output jpeg quality (1-100)")
+	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s -dir DIR -profile PROFILE [OPTIONS]\n", os.Args[0])
@@ -395,7 +397,9 @@ func main() {
 	buildWallpaper(items)
 
 	// Finally update the system wallpaper of the current user
-	updateSystemWallpaper()
+	if setWallpaper {
+		setSystemWallpaper()
+	}
 
 	log.Printf("Wallpaper updated")
 }
