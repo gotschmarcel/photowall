@@ -2,11 +2,15 @@
 
 Instapaper generates a wallpaper based on recent images of an *Instagram* profile.
 
-## Build
+## Build & Install
 
-To build *Instapaper* simply use `go build -tags osx` with an additional system build tag.
-Updating the system wallpaper is different for each operating system and even the desktop environments, e.g. Gnome, thus
-*Instapaper* provides update functions for different systems. Specify your system using one of the following build tags:
+Install *Instapaper* with:
+
+```bash
+$ go get -tags <system> github.com/gotschmarcel/instapaper
+```
+
+The system placeholder must be filled with one of the following tags, specifying the OS and desktop environment:
 
 * osx (Mac OS X)
 * gnome (Linux, Gnome)
