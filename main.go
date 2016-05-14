@@ -36,10 +36,10 @@ var (
 	outputSize    string
 	outputWidth   float64
 	outputHeight  float64
+	outputQuality int
 	gridSize      float64
 	gridSpacing   float64
 	gridCols      int
-	outputQuality int
 	setWallpaper  bool
 	bgColor       color.RGBA
 
@@ -92,13 +92,11 @@ func parseSizeOption() {
 		fatalIf(fmt.Errorf("size not in format <width>x<height>"))
 	}
 
-	var (
-		werr error
-		herr error
-	)
+	var werr, herr error
 
 	outputWidth, werr = strconv.ParseFloat(parts[0], 64)
 	outputHeight, herr = strconv.ParseFloat(parts[1], 64)
+
 	if werr != nil || herr != nil {
 		fatalIf(fmt.Errorf("Invalid width or height"))
 	}
@@ -118,18 +116,14 @@ func parseBGOption() {
 		fatalIf(fmt.Errorf("Background color not in hex format"))
 	}
 
-	r, err := strconv.ParseInt(bgHex[0:2], 16, 0)
+	rgb, err := strconv.ParseInt(bgHex, 16, 0)
 	fatalIf(err)
 
-	g, err := strconv.ParseInt(bgHex[2:4], 16, 0)
-	fatalIf(err)
+	bitMask := int64(0xFF)
 
-	b, err := strconv.ParseInt(bgHex[4:6], 16, 0)
-	fatalIf(err)
-
-	bgColor.R = uint8(r)
-	bgColor.G = uint8(g)
-	bgColor.B = uint8(b)
+	bgColor.R = uint8(rgb >> 16 & bitMask)
+	bgColor.G = uint8(rgb >> 8 & bitMask)
+	bgColor.B = uint8(rgb & bitMask)
 	bgColor.A = 255
 }
 
@@ -262,7 +256,8 @@ func downloadImages(items []*item) {
 		if cache[itm.ID] {
 			delete(cache, itm.ID)
 
-			// Make sure that the image info corresponds to the cropped image
+			// Make sure that the image has the correct size
+
 			file, err := os.Open(filepath.Join(cacheDir, itm.ID))
 			fatalIf(err)
 			defer file.Close()
@@ -298,7 +293,7 @@ func downloadImages(items []*item) {
 }
 
 func buildWallpaper(items []*item) {
-	log.Printf("Building wallpaper based on %d images (%.0fx%.0f)", len(items), outputWidth, outputHeight)
+	log.Printf("Building wallpaper (%s)", outputSize)
 
 	thumbSize := nextThumbsize()
 
@@ -326,11 +321,9 @@ func buildWallpaper(items []*item) {
 	}
 
 	for _, itm := range items {
-		// Open image file
 		file, err := os.Open(filepath.Join(cacheDir, itm.ID))
 		fatalIf(err)
 
-		// Decode jpeg file
 		img, err := jpeg.Decode(file)
 		file.Close()
 		fatalIf(err)
@@ -398,7 +391,12 @@ func main() {
 
 	// Finally update the system wallpaper of the current user
 	if setWallpaper {
-		setSystemWallpaper()
+		wpFile := filepath.Join(cacheDir, wallpaperName)
+		wpFile, err := filepath.Abs(wpFile)
+		fatalIf(err)
+
+		cmd := setSystemWallpaperCmd(wpFile)
+		fatalIf(cmd.Run())
 	}
 
 	log.Printf("Wallpaper updated")

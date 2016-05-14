@@ -9,16 +9,9 @@ package main
 import (
 	"fmt"
 	"os/exec"
-	"path/filepath"
 )
 
-func setSystemWallpaper() {
-	wpFile := filepath.Join(cacheDir, wallpaperName)
-	wpFile, err := filepath.Abs(wpFile)
-	fatalIf(err)
-
-	script := fmt.Sprintf("tell application %q to set desktop picture to POSIX file %q", "Finder", wpFile)
-
-	cmd := exec.Command("/usr/bin/osascript", "-e", script)
-	fatalIf(cmd.Run())
+func setSystemWallpaperCmd(file string) *exec.Cmd {
+	script := fmt.Sprintf("tell application %q to set desktop picture to POSIX file %q", "Finder", file)
+	return exec.Command("/usr/bin/osascript", "-e", script)
 }
