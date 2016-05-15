@@ -5,21 +5,19 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"io"
+	_ "image/png" // Import for support side effects only
 	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,34 +27,71 @@ import (
 )
 
 var (
+	// Flag vars
+	apiName       string
+	apiKey        string
 	profile       string
-	baseURL       string
+	tag           string
 	cacheDir      string
 	bgHex         string
 	outputSize    string
-	outputWidth   float64
-	outputHeight  float64
 	outputQuality int
+	squareTiles   bool
+	gridCols      int
 	gridSize      float64
 	gridSpacing   float64
-	gridCols      int
 	setWallpaper  bool
-	bgColor       color.RGBA
+
+	// Parsed values
+	outputWidth  float64
+	outputHeight float64
+	bgColor      color.RGBA
 
 	wallpaperName = fmt.Sprintf("wallpaper_%d.jpg", time.Now().Unix())
 
-	// The Instagram API doesn't allow arbitrary sizes, instead it allows:
-	thumbSizes      = []float64{320.0, 360.0, 420.0, 480.0, 540.0, 640.0, 720.0, 960.0}
-	urlSizeMatcher  = regexp.MustCompile("/s\\d+x\\d+/")
-	urlSizeReplacer = "/s%.0fx%.0f/"
+	apiFactory = &APIFactory{make(map[string]APIFactoryFunc)}
 )
 
+type MediaItem struct {
+	ID     string
+	URL    string
+	Width  int
+	Height int
+}
+
+type API interface {
+	FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error)
+}
+
+type APIFactoryFunc func(string) API
+
+type APIFactory struct {
+	apis map[string]APIFactoryFunc
+}
+
+func (a *APIFactory) Register(name string, factoryFn APIFactoryFunc) {
+	a.apis[name] = factoryFn
+}
+
+func (a *APIFactory) Create(name, key string) API {
+	factoryFn := a.apis[name]
+
+	if factoryFn == nil {
+		return nil
+	}
+
+	return factoryFn(key)
+}
+
 func init() {
+	flag.StringVar(&apiName, "api", "instagram", "API to use (instagram, tumblr)")
+	flag.StringVar(&apiKey, "key", "", "API key")
 	flag.StringVar(&profile, "profile", "", "User profile name")
-	flag.StringVar(&baseURL, "url", "https://www.instagram.com/%s/media", "Instagram base url with profile placeholder")
+	flag.StringVar(&tag, "tag", "", "Tag filter")
 	flag.StringVar(&cacheDir, "dir", "", "Cache and wallpaper directory")
 	flag.StringVar(&bgHex, "bg", "FFFFFF", "Background hex color")
 	flag.StringVar(&outputSize, "size", "1920x1080", "Wallpaper size")
+	flag.BoolVar(&squareTiles, "square", false, "Use square tiles")
 	flag.Float64Var(&gridSpacing, "spacing", 10.0, "Space between images")
 	flag.Float64Var(&gridSize, "grid", 212.0, "Grid size")
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
@@ -64,7 +99,19 @@ func init() {
 	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s -dir DIR -profile PROFILE [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, `Usage: %s -dir DIR -profile PROFILE [OPTIONS]
+
+Instagram:
+	To use instagram pass -api instagram.
+	Note: Instagram supports only square tiles!
+
+Tumblr:
+	To use tumblr pass -api tumblr -key api_key. To get an api key you must register
+	an API app for tumblr at https://www.tumblr.com/oauth/apps
+
+Options:
+`, os.Args[0])
+
 		flag.PrintDefaults()
 	}
 }
@@ -139,43 +186,6 @@ func createDir() {
 	fatalIf(err)
 }
 
-type imageInfo struct {
-	URL    string  `json:"url"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
-}
-
-type item struct {
-	ID     string `json:"id"`
-	Images struct {
-		Thumbnail *imageInfo `json:"thumbnail"`
-	} `json:"images"`
-}
-
-type media struct {
-	Status string  `json:"status"`
-	Items  []*item `json:"items"`
-}
-
-func fetchMediaItems() []*item {
-	url := fmt.Sprintf(baseURL, profile)
-	log.Printf("Fetching media from %q", url)
-
-	resp, err := http.Get(url)
-	fatalIf(err)
-
-	defer resp.Body.Close()
-
-	var media media
-	if err := json.NewDecoder(resp.Body).Decode(&media); err != nil {
-		fatalIf(fmt.Errorf("Invalid response data, the profile probably doesn't exist: %s", err.Error()))
-	}
-
-	log.Printf("Fetched %d images", len(media.Items))
-
-	return media.Items
-}
-
 func cachedImages() map[string]bool {
 	files, err := ioutil.ReadDir(cacheDir)
 	fatalIf(err)
@@ -193,36 +203,49 @@ func cachedImages() map[string]bool {
 	return images
 }
 
-func nextThumbsize() float64 {
-	// Assuming that the thumbSizes are sorted in ascending order
-	for _, size := range thumbSizes {
-		if size > gridSize {
-			return size
-		}
+func cropImage(img image.Image) image.Image {
+	bounds := img.Bounds()
+	dx, dy := bounds.Dx(), bounds.Dy()
+
+	ndx, ndy := dx, dy
+
+	if dx < dy {
+		ndy = dx
+	} else {
+		ndx = dy
 	}
 
-	return thumbSizes[len(thumbSizes)-1]
+	offx, offy := (dx-ndx)/2, (dy-ndy)/2
+	cropped := image.NewRGBA(image.Rect(0, 0, ndx, ndy))
+
+	draw.Draw(cropped, cropped.Bounds(), img, image.Pt(offx, offy), draw.Src)
+
+	return cropped
 }
 
-func downloadImage(itm *item, size float64, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	log.Printf("Downloading %q", itm.ID)
-
-	// Build thumbnail URL
-	thumbSize := fmt.Sprintf(urlSizeReplacer, size, size)
-	thumbURL := urlSizeMatcher.ReplaceAllString(itm.Images.Thumbnail.URL, thumbSize)
-
-	resp, err := http.Get(thumbURL)
+func downloadImage(item *MediaItem) {
+	resp, err := http.Get(item.URL)
 	if err != nil {
-		log.Printf("Error: Failed to download %q, %s", thumbURL, err.Error())
+		log.Printf("Error: Failed to download %q, %s", item.URL, err.Error())
 		return
 	}
 
 	defer resp.Body.Close()
 
+	// Make sure it's jpeg
+	img, _, err := image.Decode(resp.Body)
+	if err != nil {
+		log.Printf("Error: Reading image body of %q, %s", item.URL, err.Error())
+		return
+	}
+
+	// If squared tiles are requested but image isn't then crop it first.
+	if squareTiles && img.Bounds().Dx() != img.Bounds().Dy() {
+		img = cropImage(img)
+	}
+
 	// Create or truncate image file.
-	imgFilePath := filepath.Join(cacheDir, itm.ID)
+	imgFilePath := filepath.Join(cacheDir, item.ID)
 	file, err := os.Create(imgFilePath)
 	if err != nil {
 		log.Printf("Error: Failed to open file for writing %q, %s", imgFilePath, err.Error())
@@ -231,51 +254,58 @@ func downloadImage(itm *item, size float64, wg *sync.WaitGroup) {
 
 	defer file.Close()
 
-	// Write file from response body.
-	if _, err := io.Copy(file, resp.Body); err != nil {
-		log.Printf("Error: Failed to write file %q, %s", imgFilePath, err.Error())
+	if err := jpeg.Encode(file, img, &jpeg.Options{100}); err != nil {
+		log.Printf("Error: Saving image %q, %s", item.URL, err.Error())
 		return
 	}
 
-	log.Printf("Download of %q complete", itm.ID)
+	log.Printf("Download of %q complete", item.ID)
 }
 
-func downloadImages(items []*item) {
+func downloadImages(items []*MediaItem) {
 	var dls = &sync.WaitGroup{}
-
-	thumbSize := nextThumbsize()
-	log.Printf("Closest thumbnail size %f", thumbSize)
 
 	cache := cachedImages()
 	log.Printf("Found %d cached images", len(cache))
 
-	for _, itm := range items {
+	for _, item := range items {
 		// Check if the image is cached. If it is then remove
 		// it from the cache info. Anything left in the cache after
 		// the loop is deprecated.
-		if cache[itm.ID] {
-			delete(cache, itm.ID)
+		cached := cache[item.ID]
 
-			// Make sure that the image has the correct size
-
-			file, err := os.Open(filepath.Join(cacheDir, itm.ID))
-			fatalIf(err)
-			defer file.Close()
-
-			conf, _, err := image.DecodeConfig(file)
-			fatalIf(err)
-
-			if float64(conf.Width) == thumbSize {
-				continue
-			}
-
-			// Size did not match, must download a new thumbnail.
-			log.Printf("Cached image has wrong size %q - downloading new version", itm.ID)
+		if cached {
+			delete(cache, item.ID)
 		}
 
 		dls.Add(1)
 
-		go downloadImage(itm, thumbSize, dls)
+		go func(item *MediaItem) {
+			defer dls.Done()
+
+			if cached {
+
+				// Make sure that the image has the correct size and is not broken
+				file, err := os.Open(filepath.Join(cacheDir, item.ID))
+
+				if err != nil {
+					defer file.Close()
+
+					conf, _, err := image.DecodeConfig(file)
+
+					if err != nil {
+						log.Printf("Error: Could not decode jpeg header of %q", item.ID)
+					} else if conf.Width == item.Width && conf.Height == item.Height {
+						return
+					}
+
+					log.Printf("%q has wrong size", item.ID)
+				}
+			}
+
+			log.Printf("Downloading new version of %q", item.ID)
+			downloadImage(item)
+		}(item)
 	}
 
 	dls.Wait()
@@ -292,10 +322,8 @@ func downloadImages(items []*item) {
 	}
 }
 
-func buildWallpaper(items []*item) {
+func buildWallpaper(items []*MediaItem) {
 	log.Printf("Building wallpaper (%s)", outputSize)
-
-	thumbSize := nextThumbsize()
 
 	// Create wallpaper canvas and draw the background color.
 	wp := image.NewRGBA(image.Rect(0, 0, int(outputWidth), int(outputHeight)))
@@ -320,17 +348,20 @@ func buildWallpaper(items []*item) {
 		log.Printf("Warning: grid exceeds the output size, consider specifying a smaller grid size with --grid")
 	}
 
-	for _, itm := range items {
-		file, err := os.Open(filepath.Join(cacheDir, itm.ID))
+	for _, item := range items {
+		file, err := os.Open(filepath.Join(cacheDir, item.ID))
 		fatalIf(err)
 
 		img, err := jpeg.Decode(file)
 		file.Close()
-		fatalIf(err)
+
+		if err != nil {
+			fatalIf(fmt.Errorf("%s - %s", err.Error(), item.ID))
+		}
 
 		// Warn if upscaling is required
-		if gridSize > thumbSize {
-			log.Printf("Warning: Image too small %q", itm.ID)
+		if int(gridSize) > item.Width {
+			log.Printf("Warning: Image too small %q", item.ID)
 		}
 
 		// Resize the thumbnail image to its desired size
@@ -373,14 +404,23 @@ func main() {
 	parseSizeOption()
 	parseBGOption()
 
+	api := apiFactory.Create(apiName, apiKey)
+	if api == nil {
+		fatalIf(fmt.Errorf("%q API not supported", apiName))
+	}
+
 	// Create the photo and wallpaper directory.
 	createDir()
 
 	// Request recent profile media
-	items := fetchMediaItems()
-	if len(items) == 0 {
+	items, err := api.FetchMediaItems(profile, int(gridSize), tag)
+	fatalIf(err)
+
+	if l := len(items); l == 0 {
 		log.Printf("Nothing to do")
 		return
+	} else {
+		log.Printf("Fetched %d media items", l)
 	}
 
 	// Download images
