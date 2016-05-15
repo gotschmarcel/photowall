@@ -11,6 +11,8 @@ import (
 	"regexp"
 )
 
+const InstagramMediaLimit = 20
+
 type InstagramAPI struct {
 	BaseURL     string
 	thumbSizes  []int
@@ -18,7 +20,7 @@ type InstagramAPI struct {
 	urlSizeTpl  string
 }
 
-func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error) {
+func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string, limit int) ([]*MediaItem, error) {
 	profileURL := fmt.Sprintf(ia.BaseURL, profile)
 
 	resp, err := http.Get(profileURL)
@@ -45,9 +47,14 @@ func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string) ([
 
 	bestSize := ia.findBestSize(size)
 	bestSizeURLPart := fmt.Sprintf(ia.urlSizeTpl, bestSize, bestSize)
-	var mediaItems []*MediaItem
 
-	for _, item := range media.Items {
+	if limit > InstagramMediaLimit {
+		limit = InstagramMediaLimit
+	}
+
+	mediaItems := make([]*MediaItem, 0, limit)
+
+	for _, item := range media.Items[:limit] {
 		mediaURL := ia.urlSizePart.ReplaceAllString(item.Images.Thumbnail.URL, bestSizeURLPart)
 		mediaItems = append(mediaItems, &MediaItem{item.ID, mediaURL, bestSize, bestSize})
 	}

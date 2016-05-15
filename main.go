@@ -39,6 +39,7 @@ var (
 	gridCols      int
 	gridSize      int
 	gridSpacing   int
+	itemLimit     int
 	setWallpaper  bool
 
 	// Parsed values
@@ -59,7 +60,7 @@ type MediaItem struct {
 }
 
 type API interface {
-	FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error)
+	FetchMediaItems(profile string, size int, tag string, limit int) ([]*MediaItem, error)
 	SupportsOnlySquareImages() bool
 }
 
@@ -96,18 +97,22 @@ func init() {
 	flag.IntVar(&gridSize, "grid", 212.0, "Grid size")
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
 	flag.IntVar(&outputQuality, "q", 90, "Output jpeg quality (1-100)")
+	flag.IntVar(&itemLimit, "limit", 20, "Number of images fetched from api")
 	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: %s -dir DIR -profile PROFILE [OPTIONS]
 
 Instagram:
-	To use instagram pass -api instagram.
-	Note: Instagram supports only square tiles!
+	To use instagram pass -api instagram. The Instagram API supports
+	only squared tiles and max 20 images. Since the API doesn't required
+	an API token you can use it without -key.
 
 Tumblr:
-	To use tumblr pass -api tumblr -key api_key. To get an api key you must register
-	an API app for tumblr at https://www.tumblr.com/oauth/apps
+	To use tumblr pass -api tumblr -key api_key. This API requires an
+	API token. To get an api token you must register
+	an API app at https://www.tumblr.com/oauth/apps. This API supports 
+	both squared and non-squared tiles. It also allows more than 20 images.
 
 Options:
 `, os.Args[0])
@@ -536,7 +541,7 @@ func main() {
 	createDir()
 
 	// Request recent profile media
-	items, err := api.FetchMediaItems(profile, gridSize, tag)
+	items, err := api.FetchMediaItems(profile, gridSize, tag, itemLimit)
 	fatalIf(err)
 
 	if l := len(items); l == 0 {

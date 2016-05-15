@@ -12,27 +12,62 @@ import (
 	"strconv"
 )
 
+const TumblrPageSize = 20
+
 type TumblrAPI struct {
 	Key     string
 	BaseURL string
 }
 
-func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error) {
+func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string, limit int) ([]*MediaItem, error) {
+	pages := ceilIntDivision(limit, TumblrPageSize)
+	pageSize := TumblrPageSize
+	var items []*MediaItem
+
 	profileURL, err := url.Parse(fmt.Sprintf(ta.BaseURL, profile))
 	if err != nil {
 		return nil, err
 	}
 
 	q := profileURL.Query()
+
+	// Set authentication key.
 	q.Set("api_key", ta.Key)
 
+	// Set tag filter if specified.
 	if len(tag) > 0 {
 		q.Set("tag", tag)
 	}
 
-	profileURL.RawQuery = q.Encode()
+	for p := 0; p < pages; p++ {
+		if limit < TumblrPageSize {
+			pageSize = limit
+		}
 
-	resp, err := http.Get(profileURL.String())
+		q.Set("offset", strconv.Itoa(p))
+		q.Set("limit", strconv.Itoa(pageSize))
+
+		profileURL.RawQuery = q.Encode()
+
+		itms, err := ta.fetchItemsForPage(profileURL.String(), size)
+		if err != nil {
+			return nil, err
+		}
+
+		// API sources drained
+		if len(itms) == 0 {
+			break
+		}
+
+		items = append(items, itms...)
+		limit -= len(itms)
+	}
+
+	return items, nil
+}
+
+func (ta *TumblrAPI) fetchItemsForPage(endPoint string, size int) ([]*MediaItem, error) {
+	resp, err := http.Get(endPoint)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +112,8 @@ func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string) ([]*M
 		return nil, err
 	}
 
-	var mediaItems []*MediaItem
+	// Prealloc mediaItems
+	mediaItems := make([]*MediaItem, 0, len(media.Response.Posts))
 
 	for _, post := range media.Response.Posts {
 		item := &MediaItem{}
