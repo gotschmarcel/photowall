@@ -84,7 +84,7 @@ func (a *APIFactory) Create(name, key string) API {
 }
 
 func init() {
-	flag.StringVar(&apiName, "api", "instagram", "API to use (instagram)")
+	flag.StringVar(&apiName, "api", "instagram", "API to use (instagram, tumblr)")
 	flag.StringVar(&apiKey, "key", "", "API key")
 	flag.StringVar(&profile, "profile", "", "User profile name")
 	flag.StringVar(&tag, "tag", "", "Tag filter")
@@ -101,14 +101,17 @@ func init() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: %s -dir DIR -profile PROFILE [OPTIONS]
 
-		Instagram:
-		To use instagram pass -api instagram.
-		images. Instagram supports only square tiles!
+Instagram:
+	To use instagram pass -api instagram.
+	Note: Instagram supports only square tiles!
 
-		Tumblr:
-		To use tumblr pass -api tumblr -key api_key. To get an api key you must register
-		an API app for tumblr (https://www.tumblr.com/oauth/apps)
-		`, os.Args[0])
+Tumblr:
+	To use tumblr pass -api tumblr -key api_key. To get an api key you must register
+	an API app for tumblr at https://www.tumblr.com/oauth/apps
+
+Options:
+`, os.Args[0])
+
 		flag.PrintDefaults()
 	}
 }
