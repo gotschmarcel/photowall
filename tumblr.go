@@ -105,6 +105,10 @@ func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string) ([]*M
 	return mediaItems, nil
 }
 
+func (ta *TumblrAPI) SupportsOnlySquareImages() bool {
+	return false
+}
+
 func NewTumblrAPI(key string) API {
 	return &TumblrAPI{key, "https://api.tumblr.com/v2/blog/%s/posts/photo"}
 }

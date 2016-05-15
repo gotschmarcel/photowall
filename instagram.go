@@ -55,6 +55,10 @@ func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string) ([
 	return mediaItems, nil
 }
 
+func (ia *InstagramAPI) SupportsOnlySquareImages() bool {
+	return true
+}
+
 func (ia *InstagramAPI) findBestSize(size int) int {
 	// Assuming that the thumbSizes are sorted in ascending order
 	for _, s := range ia.thumbSizes {

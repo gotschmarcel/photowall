@@ -14,7 +14,6 @@ import (
 	_ "image/png" // Import for support side effects only
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,13 +37,13 @@ var (
 	outputQuality int
 	squareTiles   bool
 	gridCols      int
-	gridSize      float64
-	gridSpacing   float64
+	gridSize      int
+	gridSpacing   int
 	setWallpaper  bool
 
 	// Parsed values
-	outputWidth  float64
-	outputHeight float64
+	outputWidth  int
+	outputHeight int
 	bgColor      color.RGBA
 
 	wallpaperName = fmt.Sprintf("wallpaper_%d.jpg", time.Now().Unix())
@@ -61,6 +60,7 @@ type MediaItem struct {
 
 type API interface {
 	FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error)
+	SupportsOnlySquareImages() bool
 }
 
 type APIFactoryFunc func(string) API
@@ -92,8 +92,8 @@ func init() {
 	flag.StringVar(&bgHex, "bg", "FFFFFF", "Background hex color")
 	flag.StringVar(&outputSize, "size", "1920x1080", "Wallpaper size")
 	flag.BoolVar(&squareTiles, "square", false, "Use square tiles")
-	flag.Float64Var(&gridSpacing, "spacing", 10.0, "Space between images")
-	flag.Float64Var(&gridSize, "grid", 212.0, "Grid size")
+	flag.IntVar(&gridSpacing, "spacing", 10.0, "Space between images")
+	flag.IntVar(&gridSize, "grid", 212.0, "Grid size")
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
 	flag.IntVar(&outputQuality, "q", 90, "Output jpeg quality (1-100)")
 	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
@@ -141,14 +141,14 @@ func parseSizeOption() {
 
 	var werr, herr error
 
-	outputWidth, werr = strconv.ParseFloat(parts[0], 64)
-	outputHeight, herr = strconv.ParseFloat(parts[1], 64)
+	outputWidth, werr = strconv.Atoi(parts[0])
+	outputHeight, herr = strconv.Atoi(parts[1])
 
 	if werr != nil || herr != nil {
 		fatalIf(fmt.Errorf("Invalid width or height"))
 	}
 
-	if outputWidth < 0.0 || outputHeight < 0.0 {
+	if outputWidth < 0 || outputHeight < 0 {
 		fatalIf(fmt.Errorf("Size must be positive"))
 	}
 }
@@ -203,6 +203,18 @@ func cachedImages() map[string]bool {
 	return images
 }
 
+func openCachedImage(id string) (image.Image, error) {
+	imgFilePath := filepath.Join(cacheDir, id)
+
+	file, err := os.Open(imgFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+	return jpeg.Decode(file)
+}
+
 func cropImage(img image.Image) image.Image {
 	bounds := img.Bounds()
 	dx, dy := bounds.Dx(), bounds.Dy()
@@ -242,6 +254,9 @@ func downloadImage(item *MediaItem) {
 	// If squared tiles are requested but image isn't then crop it first.
 	if squareTiles && img.Bounds().Dx() != img.Bounds().Dy() {
 		img = cropImage(img)
+		// Update the item information
+		item.Width = img.Bounds().Dx()
+		item.Height = img.Bounds().Dy()
 	}
 
 	// Create or truncate image file.
@@ -280,15 +295,16 @@ func downloadImages(items []*MediaItem) {
 
 		dls.Add(1)
 
-		go func(item *MediaItem) {
+		go func(item *MediaItem, cached bool) {
 			defer dls.Done()
 
 			if cached {
+				log.Printf("Checking cached image %q", item.ID)
 
 				// Make sure that the image has the correct size and is not broken
 				file, err := os.Open(filepath.Join(cacheDir, item.ID))
 
-				if err != nil {
+				if err == nil {
 					defer file.Close()
 
 					conf, _, err := image.DecodeConfig(file)
@@ -300,12 +316,14 @@ func downloadImages(items []*MediaItem) {
 					}
 
 					log.Printf("%q has wrong size", item.ID)
+				} else {
+					log.Printf("Could not open cached version of %q, %s", item.ID, err.Error())
 				}
 			}
 
 			log.Printf("Downloading new version of %q", item.ID)
 			downloadImage(item)
-		}(item)
+		}(item, cached)
 	}
 
 	dls.Wait()
@@ -322,51 +340,40 @@ func downloadImages(items []*MediaItem) {
 	}
 }
 
-func buildWallpaper(items []*MediaItem) {
-	log.Printf("Building wallpaper (%s)", outputSize)
-
-	// Create wallpaper canvas and draw the background color.
-	wp := image.NewRGBA(image.Rect(0, 0, int(outputWidth), int(outputHeight)))
-	draw.Draw(wp, wp.Bounds(), &image.Uniform{bgColor}, image.ZP, draw.Src)
-
+func drawSquareGrid(wp *image.RGBA, items []*MediaItem) {
 	// Compute number of rows and columns as well as the offset to
 	// center the grid.
 	//
 	// Note: columns are also computed to adapt the number of columns in case
 	//       that the number of items is not divisible by the number of columns
 	//		 specified without a remainder.
-	rows := math.Ceil(float64(len(items)) / float64(gridCols))
-	cols := math.Ceil(float64(len(items)) / float64(rows))
+	rows := ceilIntDivision(len(items), gridCols)
+	cols := ceilIntDivision(len(items), rows)
 
-	dx := (outputWidth - (cols*(gridSize+gridSpacing) - gridSpacing)) / 2.0
-	dy := (outputHeight - (rows*(gridSize+gridSpacing) - gridSpacing)) / 2.0
+	dx := (outputWidth - (cols*(gridSize+gridSpacing) - gridSpacing)) / 2
+	dy := (outputHeight - (rows*(gridSize+gridSpacing) - gridSpacing)) / 2
 
-	row, col := 0.0, 0.0
+	row, col := 0, 0
 
 	// Warn if grid size exceeds canvas
-	if dx < 0.0 || dy < 0.0 {
+	if dx < 0 || dy < 0 {
 		log.Printf("Warning: grid exceeds the output size, consider specifying a smaller grid size with --grid")
 	}
 
 	for _, item := range items {
-		file, err := os.Open(filepath.Join(cacheDir, item.ID))
-		fatalIf(err)
-
-		img, err := jpeg.Decode(file)
-		file.Close()
-
+		img, err := openCachedImage(item.ID)
 		if err != nil {
-			fatalIf(fmt.Errorf("%s - %s", err.Error(), item.ID))
+			fatalIf(fmt.Errorf("%s with image %s", err.Error(), item.ID))
 		}
 
 		// Warn if upscaling is required
-		if int(gridSize) > item.Width {
+		if gridSize > item.Width {
 			log.Printf("Warning: Image too small %q", item.ID)
 		}
 
 		// Resize the thumbnail image to its desired size
 		// if necessary
-		if img.Bounds().Dx() != int(gridSize) {
+		if img.Bounds().Dx() != gridSize {
 			img = resize.Resize(uint(gridSize), 0, img, resize.Lanczos3)
 		}
 
@@ -375,16 +382,40 @@ func buildWallpaper(items []*MediaItem) {
 		cdy := dy + row*(gridSize+gridSpacing)
 
 		// Draw scaled image onto wallpaper
-		dp := image.Pt(int(cdx), int(cdy))
+		dp := image.Pt(cdx, cdy)
 		bounds := image.Rectangle{dp, dp.Add(img.Bounds().Size())}
 		draw.Draw(wp, bounds, img, img.Bounds().Min, draw.Src)
 
 		// Check if column is complete
 		row++
-		if math.Mod(row, rows) == 0.0 {
+		if row/rows != 0 {
 			col++
-			row = 0.0
+			row = 0
 		}
+	}
+
+}
+
+func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
+	//rows := ceilIntDivision(len(items), gridCols)
+
+	//for _, item := range items {
+
+	//}
+}
+
+func buildWallpaper(items []*MediaItem) {
+	log.Printf("Building wallpaper (%s)", outputSize)
+
+	// Create wallpaper canvas and draw the background color.
+	wp := image.NewRGBA(image.Rect(0, 0, outputWidth, outputHeight))
+	draw.Draw(wp, wp.Bounds(), &image.Uniform{bgColor}, image.ZP, draw.Src)
+
+	// Choose drawing algorithm
+	if squareTiles {
+		drawSquareGrid(wp, items)
+	} else {
+		drawNonSquareGrid(wp, items)
 	}
 
 	wpFile := filepath.Join(cacheDir, wallpaperName)
@@ -409,11 +440,17 @@ func main() {
 		fatalIf(fmt.Errorf("%q API not supported", apiName))
 	}
 
+	// Check if the api supports non-square tiles
+	if !squareTiles && api.SupportsOnlySquareImages() {
+		log.Printf("The %q API supports only square tiles - falling back", apiName)
+		squareTiles = true
+	}
+
 	// Create the photo and wallpaper directory.
 	createDir()
 
 	// Request recent profile media
-	items, err := api.FetchMediaItems(profile, int(gridSize), tag)
+	items, err := api.FetchMediaItems(profile, gridSize, tag)
 	fatalIf(err)
 
 	if l := len(items); l == 0 {
