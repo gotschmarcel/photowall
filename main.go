@@ -11,7 +11,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"io"
+	_ "image/png" // Import for support side effects only
 	"io/ioutil"
 	"log"
 	"math"
@@ -29,8 +29,9 @@ import (
 var (
 	// Flag vars
 	apiName       string
+	apiKey        string
 	profile       string
-	tagString     string
+	tag           string
 	cacheDir      string
 	bgHex         string
 	outputSize    string
@@ -42,14 +43,13 @@ var (
 	setWallpaper  bool
 
 	// Parsed values
-	tags         []string
 	outputWidth  float64
 	outputHeight float64
 	bgColor      color.RGBA
 
 	wallpaperName = fmt.Sprintf("wallpaper_%d.jpg", time.Now().Unix())
 
-	apiFactory = &APIFactory{make(map[string]func() API)}
+	apiFactory = &APIFactory{make(map[string]APIFactoryFunc)}
 )
 
 type MediaItem struct {
@@ -60,35 +60,38 @@ type MediaItem struct {
 }
 
 type API interface {
-	FetchMediaItems(profile string, size int, tags []string) ([]*MediaItem, error)
+	FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error)
 }
+
+type APIFactoryFunc func(string) API
 
 type APIFactory struct {
-	apis map[string]func() API
+	apis map[string]APIFactoryFunc
 }
 
-func (a *APIFactory) Register(name string, factoryFn func() API) {
+func (a *APIFactory) Register(name string, factoryFn APIFactoryFunc) {
 	a.apis[name] = factoryFn
 }
 
-func (a *APIFactory) Create(name string) API {
+func (a *APIFactory) Create(name, key string) API {
 	factoryFn := a.apis[name]
 
 	if factoryFn == nil {
 		return nil
 	}
 
-	return factoryFn()
+	return factoryFn(key)
 }
 
 func init() {
 	flag.StringVar(&apiName, "api", "instagram", "API to use (instagram)")
+	flag.StringVar(&apiKey, "key", "", "API key")
 	flag.StringVar(&profile, "profile", "", "User profile name")
-	flag.StringVar(&tagString, "tags", "", "Comma separated tag list, e.g. cats,dogs")
+	flag.StringVar(&tag, "tag", "", "Tag filter")
 	flag.StringVar(&cacheDir, "dir", "", "Cache and wallpaper directory")
 	flag.StringVar(&bgHex, "bg", "FFFFFF", "Background hex color")
 	flag.StringVar(&outputSize, "size", "1920x1080", "Wallpaper size")
-	flag.BoolVar(&squareTiles, "square", false, "Use square tiles (Some APIs support only square tiles)")
+	flag.BoolVar(&squareTiles, "square", false, "Use square tiles")
 	flag.Float64Var(&gridSpacing, "spacing", 10.0, "Space between images")
 	flag.Float64Var(&gridSize, "grid", 212.0, "Grid size")
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
@@ -96,7 +99,16 @@ func init() {
 	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s -dir DIR -profile PROFILE [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, `Usage: %s -dir DIR -profile PROFILE [OPTIONS]
+
+		Instagram:
+		To use instagram pass -api instagram.
+		images. Instagram supports only square tiles!
+
+		Tumblr:
+		To use tumblr pass -api tumblr -key api_key. To get an api key you must register
+		an API app for tumblr (https://www.tumblr.com/oauth/apps)
+		`, os.Args[0])
 		flag.PrintDefaults()
 	}
 }
@@ -159,10 +171,6 @@ func parseBGOption() {
 	bgColor.A = 255
 }
 
-func parseTagsOption() {
-	tags = strings.Split(tagString, ",")
-}
-
 func createDir() {
 	log.Printf("Creating data directory %q", cacheDir)
 	err := os.Mkdir(cacheDir, os.ModeDir|0755)
@@ -192,11 +200,27 @@ func cachedImages() map[string]bool {
 	return images
 }
 
-func downloadImage(item *MediaItem, wg *sync.WaitGroup) {
-	defer wg.Done()
+func cropImage(img image.Image) image.Image {
+	bounds := img.Bounds()
+	dx, dy := bounds.Dx(), bounds.Dy()
 
-	log.Printf("Downloading %q", item.ID)
+	ndx, ndy := dx, dy
 
+	if dx < dy {
+		ndy = dx
+	} else {
+		ndx = dy
+	}
+
+	offx, offy := (dx-ndx)/2, (dy-ndy)/2
+	cropped := image.NewRGBA(image.Rect(0, 0, ndx, ndy))
+
+	draw.Draw(cropped, cropped.Bounds(), img, image.Pt(offx, offy), draw.Src)
+
+	return cropped
+}
+
+func downloadImage(item *MediaItem) {
 	resp, err := http.Get(item.URL)
 	if err != nil {
 		log.Printf("Error: Failed to download %q, %s", item.URL, err.Error())
@@ -204,6 +228,18 @@ func downloadImage(item *MediaItem, wg *sync.WaitGroup) {
 	}
 
 	defer resp.Body.Close()
+
+	// Make sure it's jpeg
+	img, _, err := image.Decode(resp.Body)
+	if err != nil {
+		log.Printf("Error: Reading image body of %q, %s", item.URL, err.Error())
+		return
+	}
+
+	// If squared tiles are requested but image isn't then crop it first.
+	if squareTiles && img.Bounds().Dx() != img.Bounds().Dy() {
+		img = cropImage(img)
+	}
 
 	// Create or truncate image file.
 	imgFilePath := filepath.Join(cacheDir, item.ID)
@@ -215,9 +251,8 @@ func downloadImage(item *MediaItem, wg *sync.WaitGroup) {
 
 	defer file.Close()
 
-	// Write file from response body.
-	if _, err := io.Copy(file, resp.Body); err != nil {
-		log.Printf("Error: Failed to write file %q, %s", imgFilePath, err.Error())
+	if err := jpeg.Encode(file, img, &jpeg.Options{100}); err != nil {
+		log.Printf("Error: Saving image %q, %s", item.URL, err.Error())
 		return
 	}
 
@@ -234,29 +269,40 @@ func downloadImages(items []*MediaItem) {
 		// Check if the image is cached. If it is then remove
 		// it from the cache info. Anything left in the cache after
 		// the loop is deprecated.
-		if cache[item.ID] {
+		cached := cache[item.ID]
+
+		if cached {
 			delete(cache, item.ID)
-
-			// Make sure that the image has the correct size
-
-			file, err := os.Open(filepath.Join(cacheDir, item.ID))
-			fatalIf(err)
-			defer file.Close()
-
-			conf, _, err := image.DecodeConfig(file)
-			fatalIf(err)
-
-			if conf.Width == item.Width && conf.Height == item.Height {
-				continue
-			}
-
-			// Size did not match, must download a new thumbnail.
-			log.Printf("Cached image has wrong size %q - downloading new version", item.ID)
 		}
 
 		dls.Add(1)
 
-		go downloadImage(item, dls)
+		go func(item *MediaItem) {
+			defer dls.Done()
+
+			if cached {
+
+				// Make sure that the image has the correct size and is not broken
+				file, err := os.Open(filepath.Join(cacheDir, item.ID))
+
+				if err != nil {
+					defer file.Close()
+
+					conf, _, err := image.DecodeConfig(file)
+
+					if err != nil {
+						log.Printf("Error: Could not decode jpeg header of %q", item.ID)
+					} else if conf.Width == item.Width && conf.Height == item.Height {
+						return
+					}
+
+					log.Printf("%q has wrong size", item.ID)
+				}
+			}
+
+			log.Printf("Downloading new version of %q", item.ID)
+			downloadImage(item)
+		}(item)
 	}
 
 	dls.Wait()
@@ -305,7 +351,10 @@ func buildWallpaper(items []*MediaItem) {
 
 		img, err := jpeg.Decode(file)
 		file.Close()
-		fatalIf(err)
+
+		if err != nil {
+			fatalIf(fmt.Errorf("%s - %s", err.Error(), item.ID))
+		}
 
 		// Warn if upscaling is required
 		if int(gridSize) > item.Width {
@@ -352,7 +401,7 @@ func main() {
 	parseSizeOption()
 	parseBGOption()
 
-	api := apiFactory.Create(apiName)
+	api := apiFactory.Create(apiName, apiKey)
 	if api == nil {
 		fatalIf(fmt.Errorf("%q API not supported", apiName))
 	}
@@ -361,7 +410,7 @@ func main() {
 	createDir()
 
 	// Request recent profile media
-	items, err := api.FetchMediaItems(profile, int(gridSize), tags)
+	items, err := api.FetchMediaItems(profile, int(gridSize), tag)
 	fatalIf(err)
 
 	if l := len(items); l == 0 {

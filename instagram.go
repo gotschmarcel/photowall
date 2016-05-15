@@ -18,7 +18,7 @@ type InstagramAPI struct {
 	urlSizeTpl  string
 }
 
-func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tags []string) ([]*MediaItem, error) {
+func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string) ([]*MediaItem, error) {
 	profileURL := fmt.Sprintf(ia.BaseURL, profile)
 
 	resp, err := http.Get(profileURL)
@@ -66,7 +66,7 @@ func (ia *InstagramAPI) findBestSize(size int) int {
 	return ia.thumbSizes[len(ia.thumbSizes)-1]
 }
 
-func NewInstagramAPI() API {
+func NewInstagramAPI(string) API {
 	return &InstagramAPI{
 		BaseURL:     "https://instagram.com/%s/media",
 		thumbSizes:  []int{320, 360, 420, 480, 540, 640, 720, 960},
