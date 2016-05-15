@@ -277,6 +277,15 @@ func downloadImage(item *MediaItem) {
 	log.Printf("Download of %q complete", item.ID)
 }
 
+func imageHasCorrectSize(iconf *image.Config, item *MediaItem) bool {
+	if squareTiles {
+		size := minInt(item.Width, item.Height)
+		return iconf.Height == size && iconf.Width == size
+	}
+
+	return iconf.Width == item.Width && iconf.Height == item.Height
+}
+
 func downloadImages(items []*MediaItem) {
 	var dls = &sync.WaitGroup{}
 
@@ -303,26 +312,29 @@ func downloadImages(items []*MediaItem) {
 
 				// Make sure that the image has the correct size and is not broken
 				file, err := os.Open(filepath.Join(cacheDir, item.ID))
-
-				if err == nil {
-					defer file.Close()
-
-					conf, _, err := image.DecodeConfig(file)
-
-					if err != nil {
-						log.Printf("Error: Could not decode jpeg header of %q", item.ID)
-					} else if conf.Width == item.Width && conf.Height == item.Height {
-						return
-					}
-
-					log.Printf("%q has wrong size", item.ID)
-				} else {
+				if err != nil {
 					log.Printf("Could not open cached version of %q, %s", item.ID, err.Error())
+					goto downloadImage
 				}
+
+				defer file.Close()
+				conf, _, err := image.DecodeConfig(file)
+				if err != nil {
+					log.Printf("Error: Could not decode jpeg header of %q", item.ID)
+					goto downloadImage
+				}
+
+				if imageHasCorrectSize(&conf, item) {
+					return
+				}
+
+				log.Printf("%q has wrong size", item.ID)
 			}
 
+		downloadImage:
 			log.Printf("Downloading new version of %q", item.ID)
 			downloadImage(item)
+
 		}(item, cached)
 	}
 
@@ -388,7 +400,7 @@ func drawSquareGrid(wp *image.RGBA, items []*MediaItem) {
 
 		// Check if column is complete
 		row++
-		if row/rows != 0 {
+		if row == rows {
 			col++
 			row = 0
 		}
@@ -397,11 +409,85 @@ func drawSquareGrid(wp *image.RGBA, items []*MediaItem) {
 }
 
 func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
-	//rows := ceilIntDivision(len(items), gridCols)
+	cols := gridCols
+	rows := ceilIntDivision(len(items), cols)
 
-	//for _, item := range items {
+	desiredWidth := cols*(gridSize+gridSpacing) - gridSpacing
+	desiredHeights := make([]int, rows)
+	aggregatedHeight := 0
 
-	//}
+	row, col := 0, 0
+
+	// Compute row heights based on the sum of the image ratios in
+	// one row and the desired width of all images in this row
+	// without spacing.
+	aggregatedRatio := 0.0
+	for i, item := range items {
+		aggregatedRatio += float64(item.Width) / float64(item.Height)
+		col++
+
+		if col == cols || i == len(items)-1 {
+			rowHeight := int(float64(desiredWidth) / aggregatedRatio)
+			aggregatedHeight += rowHeight
+			desiredHeights[row] = rowHeight
+
+			aggregatedRatio = 0.0
+			col = 0
+			row++
+		}
+	}
+
+	baseDx := (outputWidth - (desiredWidth + cols*gridSpacing - gridSpacing)) / 2
+
+	dx := baseDx
+	dy := (outputHeight - (aggregatedHeight + rows*gridSpacing - gridSpacing)) / 2
+
+	if dx < 0 || dy < 0 {
+		log.Printf("Warning: grid exceeds the output size, consider specifying a smaller grid size with --grid")
+	}
+
+	desiredRowWidth := desiredWidth + (cols * gridSpacing) - gridSpacing
+	rowWidth := 0
+	row, col = 0, 0
+	for _, item := range items {
+		img, err := openCachedImage(item.ID)
+		fatalIf(err)
+
+		h := desiredHeights[row]
+		w := 0 // Keep aspect ratio
+
+		// Due to rounding errors it is possible that
+		// a row may have some pixels left. Since this looks ugly
+		// we need to scale the last image in a row so that
+		// it fills the row completely. Even though we're
+		// scaling the image not by its aspect ratio it's
+		// not really visible because it's just off by a few
+		// pixels.
+		if col == cols-1 {
+			aw := h * img.Bounds().Dx() / img.Bounds().Dy()
+			pixLeft := desiredRowWidth - rowWidth - aw
+			w = aw + pixLeft
+		}
+
+		if img.Bounds().Dy() != h {
+			img = resize.Resize(uint(w), uint(h), img, resize.Lanczos3)
+		}
+
+		dp := image.Pt(dx, dy)
+		bounds := image.Rectangle{dp, dp.Add(img.Bounds().Size())}
+		draw.Draw(wp, bounds, img, img.Bounds().Min, draw.Src)
+
+		dx += (img.Bounds().Dx() + gridSpacing)
+		col++
+		rowWidth += (img.Bounds().Dx() + gridSpacing)
+		if col == cols {
+			col = 0
+			rowWidth = 0
+			row++
+			dx = baseDx
+			dy += (h + gridSpacing)
+		}
+	}
 }
 
 func buildWallpaper(items []*MediaItem) {
@@ -468,6 +554,8 @@ func main() {
 
 	// Finally update the system wallpaper of the current user
 	if setWallpaper {
+		log.Printf("Setting system wallpaper")
+
 		wpFile := filepath.Join(cacheDir, wallpaperName)
 		wpFile, err := filepath.Abs(wpFile)
 		fatalIf(err)
@@ -475,6 +563,4 @@ func main() {
 		cmd := setSystemWallpaperCmd(wpFile)
 		fatalIf(cmd.Run())
 	}
-
-	log.Printf("Wallpaper updated")
 }

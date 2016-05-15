@@ -11,3 +11,11 @@ package main
 func ceilIntDivision(a, b int) int {
 	return 1 + ((a - 1) / b)
 }
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+
+	return b
+}
