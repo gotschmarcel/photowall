@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,6 +24,11 @@ import (
 	"time"
 
 	"github.com/nfnt/resize"
+)
+
+const (
+	Version                  = "v1.3.1"
+	InstapaperDefaultDirName = ".instapaper"
 )
 
 var (
@@ -40,6 +46,7 @@ var (
 	gridSize      int
 	gridSpacing   int
 	itemLimit     int
+	showVersion   bool
 	setWallpaper  bool
 
 	// Parsed values
@@ -98,15 +105,20 @@ func init() {
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
 	flag.IntVar(&outputQuality, "q", 90, "Output jpeg quality (1-100)")
 	flag.IntVar(&itemLimit, "limit", 20, "Number of images fetched from api")
+	flag.BoolVar(&showVersion, "v", false, "Show version")
 	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: %s -dir DIR -profile PROFILE [OPTIONS]
+		fmt.Fprintf(os.Stderr, `Usage: %s -profile PROFILE [OPTIONS]
+
+By default instapaper stores its cached images under ~/.instapaper. If you
+want to change the cache directory pass -dir <your_dir>.
 
 Instagram:
 	To use instagram pass -api instagram. The Instagram API supports
 	only squared tiles and max 20 images. Since the API doesn't required
-	an API token you can use it without -key.
+	an API token you can use it without -key. Unfortunately the tag filter
+	is not available for Instagram.
 
 Tumblr:
 	To use tumblr pass -api tumblr -key api_key. This API requires an
@@ -134,6 +146,7 @@ func requiredOption(name, val string) {
 		return
 	}
 
+	flag.Usage()
 	fatalIf(fmt.Errorf("%q not specified", name))
 }
 
@@ -177,6 +190,19 @@ func parseBGOption() {
 	bgColor.G = uint8(rgb >> 8 & bitMask)
 	bgColor.B = uint8(rgb & bitMask)
 	bgColor.A = 255
+}
+
+func fallbackDirOption() {
+	if len(cacheDir) > 0 {
+		return
+	}
+
+	usr, err := user.Current()
+	if err != nil {
+		fatalIf(fmt.Errorf("Unable to get home directory. Try setting -dir yourself"))
+	}
+
+	cacheDir = filepath.Join(usr.HomeDir, InstapaperDefaultDirName)
 }
 
 func createDir() {
@@ -454,7 +480,7 @@ func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
 	desiredRowWidth := desiredWidth + (cols * gridSpacing) - gridSpacing
 	rowWidth := 0
 	row, col = 0, 0
-	for _, item := range items {
+	for i, item := range items {
 		img, err := openCachedImage(item.ID)
 		fatalIf(err)
 
@@ -468,7 +494,7 @@ func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
 		// scaling the image not by its aspect ratio it's
 		// not really visible because it's just off by a few
 		// pixels.
-		if col == cols-1 {
+		if col == cols-1 || i == len(items)-1 {
 			aw := h * img.Bounds().Dx() / img.Bounds().Dy()
 			pixLeft := desiredRowWidth - rowWidth - aw
 			w = aw + pixLeft
@@ -520,11 +546,17 @@ func buildWallpaper(items []*MediaItem) {
 func main() {
 	flag.Parse()
 
+	// Check version flag
+	if showVersion {
+		fmt.Println(Version)
+		return
+	}
+
 	requiredOption("profile", profile)
-	requiredOption("dir", cacheDir)
 
 	parseSizeOption()
 	parseBGOption()
+	fallbackDirOption()
 
 	api := apiFactory.Create(apiName, apiKey)
 	if api == nil {
