@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	Version                  = "v1.3.1"
+	Version                  = "v1.4.0"
 	InstapaperDefaultDirName = ".instapaper"
 )
 

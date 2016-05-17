@@ -1,4 +1,4 @@
-// +build lnx_gnome
+// +build lnx_gnome3
 
 // Copyright 2016 Marcel Gotsch. All rights reserved.
 // Use of this source code is governed by a BSD-style
@@ -6,8 +6,10 @@
 
 package main
 
-import "os/exec"
+import (
+	"os/exec"
+)
 
 func setSystemWallpaperCmd(file string) *exec.Cmd {
-	return exec.Command("gconftool-2", "-t", "str", "-s", "/desktop/gnome/background/picture_filename", file)
+	return exec.Command("gsettings", "set", "org.gnome.desktop.background", "picture-uri", "file://"+file)
 }

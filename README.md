@@ -13,7 +13,8 @@ $ go get -tags <system> github.com/gotschmarcel/instapaper
 The system placeholder must be filled with one of the following tags, specifying the OS and desktop environment:
 
 * osx (Mac OS X)
-* lnx_gnome (Linux, Gnome)
+* lnx_gnome2 (Linux, Gnome 2)
+* lnx_gnome3 (Linux, Gnome 3)
 
 ## Usage
 
