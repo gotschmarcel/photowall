@@ -11,7 +11,6 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	_ "image/png" // Import for support side effects only
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -22,6 +21,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "image/gif" // Import for support side effects only
+	_ "image/png" // Import for support side effects only
 
 	"github.com/nfnt/resize"
 )
