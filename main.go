@@ -42,6 +42,7 @@ var (
 	tag           string
 	baseDir       string
 	bgHex         string
+	bgPattern     string
 	outputSize    string
 	outputQuality int
 	squareTiles   bool
@@ -102,6 +103,7 @@ func init() {
 	flag.StringVar(&tag, "tag", "", "Tag filter")
 	flag.StringVar(&baseDir, "dir", "", "Data directory")
 	flag.StringVar(&bgHex, "bg", "FFFFFF", "Background hex color")
+	flag.StringVar(&bgPattern, "pattern", "", "Background pattern file")
 	flag.StringVar(&outputSize, "size", "1920x1080", "Wallpaper size")
 	flag.BoolVar(&squareTiles, "square", false, "Use square tiles")
 	flag.IntVar(&gridSpacing, "spacing", 10.0, "Space between images")
@@ -548,12 +550,40 @@ func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
 	}
 }
 
+func drawBackgroundColor(wp *image.RGBA) {
+	draw.Draw(wp, wp.Bounds(), &image.Uniform{bgColor}, image.ZP, draw.Src)
+}
+
+func drawBackgroundPattern(wp *image.RGBA) {
+	file, err := os.Open(bgPattern)
+	fatalIf(err)
+
+	pattern, _, err := image.Decode(file)
+	fatalIf(err)
+
+	cols := ceilIntDivision(wp.Bounds().Dx(), pattern.Bounds().Dx())
+	rows := ceilIntDivision(wp.Bounds().Dy(), pattern.Bounds().Dy())
+
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			dp := image.Pt(col*pattern.Bounds().Dx(), row*pattern.Bounds().Dy())
+			r := image.Rectangle{dp, dp.Add(pattern.Bounds().Size())}
+			draw.Draw(wp, r, pattern, image.ZP, draw.Src)
+		}
+	}
+}
+
 func buildWallpaper(items []*MediaItem) {
 	log.Printf("Building wallpaper (%s)", outputSize)
 
 	// Create wallpaper canvas and draw the background color.
 	wp := image.NewRGBA(image.Rect(0, 0, outputWidth, outputHeight))
-	draw.Draw(wp, wp.Bounds(), &image.Uniform{bgColor}, image.ZP, draw.Src)
+
+	if len(bgPattern) == 0 {
+		drawBackgroundColor(wp)
+	} else {
+		drawBackgroundPattern(wp)
+	}
 
 	// Choose drawing algorithm
 	if squareTiles {
