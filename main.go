@@ -268,11 +268,11 @@ func cropImage(img image.Image) image.Image {
 	return cropped
 }
 
-func downloadImage(item *MediaItem) {
+func downloadImage(item *MediaItem) bool {
 	resp, err := http.Get(item.URL)
 	if err != nil {
 		log.Printf("Error: Failed to download %q, %s", item.URL, err.Error())
-		return
+		return false
 	}
 
 	defer resp.Body.Close()
@@ -281,7 +281,7 @@ func downloadImage(item *MediaItem) {
 	img, _, err := image.Decode(resp.Body)
 	if err != nil {
 		log.Printf("Error: Reading image body of %q, %s", item.URL, err.Error())
-		return
+		return false
 	}
 
 	// If squared tiles are requested but image isn't then crop it first.
@@ -297,17 +297,18 @@ func downloadImage(item *MediaItem) {
 	file, err := os.Create(imgFilePath)
 	if err != nil {
 		log.Printf("Error: Failed to open file for writing %q, %s", imgFilePath, err.Error())
-		return
+		return false
 	}
 
 	defer file.Close()
 
 	if err := jpeg.Encode(file, img, &jpeg.Options{100}); err != nil {
 		log.Printf("Error: Saving image %q, %s", item.URL, err.Error())
-		return
+		return false
 	}
 
 	log.Printf("Download of %q complete", item.ID)
+	return true
 }
 
 func imageHasCorrectSize(iconf *image.Config, item *MediaItem) bool {
@@ -319,8 +320,20 @@ func imageHasCorrectSize(iconf *image.Config, item *MediaItem) bool {
 	return iconf.Width == item.Width && iconf.Height == item.Height
 }
 
+func removeItem(items []*MediaItem, item *MediaItem) []*MediaItem {
+	for i, it := range items {
+		if it == item {
+			return append(items[:i], items[i+1:]...)
+		}
+	}
+
+	return items
+}
+
 func downloadImages(items []*MediaItem) {
-	var dls = &sync.WaitGroup{}
+	var dls sync.WaitGroup
+	var mutex sync.Mutex
+	var failedItems []*MediaItem
 
 	cache := cachedImages()
 	log.Printf("Found %d cached images", len(cache))
@@ -366,7 +379,13 @@ func downloadImages(items []*MediaItem) {
 
 		downloadImage:
 			log.Printf("Downloading new version of %q", item.ID)
-			downloadImage(item)
+			if !downloadImage(item) {
+				// If the download failed we remember the item
+				// in order to remove it later.
+				mutex.Lock()
+				failedItems = append(failedItems, item)
+				mutex.Unlock()
+			}
 
 		}(item, cached)
 	}
@@ -382,6 +401,11 @@ func downloadImages(items []*MediaItem) {
 		if err := os.Remove(imgFilePath); err != nil {
 			log.Printf("Error: Failed to remove old file %q, %s", imgFilePath, err.Error())
 		}
+	}
+
+	// Remove failed items
+	for _, item := range failedItems {
+		items = removeItem(items, item)
 	}
 }
 
