@@ -13,7 +13,6 @@ $ go get -tags <system> github.com/gotschmarcel/instapaper
 The system placeholder must be filled with one of the following tags, specifying the OS and desktop environment:
 
 * osx (Mac OS X)
-* lnx_gnome2 (Linux, Gnome 2)
 * lnx_gnome3 (Linux, Gnome 3)
 
 ## Usage
@@ -22,13 +21,13 @@ The simplest call must specify the data directory, where *Instapaper* stores its
 the *Instagram* profile, from which the media will be downloaded.
 
 ```bash
-$ instapaper -dir "~/.instapaper" -profile "jondoe"
+$ instapaper -profile "jondoe"
 ```
 
 It is also possible to automatically update the system wallpaper by using `-set`:
 
 ```bash
-$ instapaper -dir "~/.instapaper" -profile "jondoe" -set
+$ instapaper -profile "jondoe" -set
 ```
 
 *Instapaper* provides a lot more options, such as background color, output size, spacing and more. To
