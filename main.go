@@ -592,14 +592,8 @@ func main() {
 	buildWallpaper(items)
 
 	// Finally update the system wallpaper of the current user
-	if setWallpaper {
-		log.Printf("Setting system wallpaper")
+	wpFile, err := filepath.Abs(filepath.Join(cacheDir, wallpaperName))
+	fatalIf(err)
 
-		wpFile := filepath.Join(cacheDir, wallpaperName)
-		wpFile, err := filepath.Abs(wpFile)
-		fatalIf(err)
-
-		cmd := setSystemWallpaperCmd(wpFile)
-		fatalIf(cmd.Run())
-	}
+	fatalIf(systemUpdate(wpFile))
 }

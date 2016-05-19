@@ -11,7 +11,13 @@ import (
 	"os/exec"
 )
 
-func setSystemWallpaperCmd(file string) *exec.Cmd {
+func systemUpdate(file string) error {
 	script := fmt.Sprintf("tell application %q to set desktop picture to POSIX file %q", "Finder", file)
-	return exec.Command("/usr/bin/osascript", "-e", script)
+
+	err := exec.Command("/usr/bin/osascript", "-e", script).Run()
+	if err != nil {
+		return fmt.Errorf("Unable to set wallpaper, %s", err.Error())
+	}
+
+	return nil
 }

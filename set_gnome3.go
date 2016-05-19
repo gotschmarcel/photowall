@@ -7,9 +7,31 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os/exec"
 )
 
-func setSystemWallpaperCmd(file string) *exec.Cmd {
-	return exec.Command("gsettings", "set", "org.gnome.desktop.background", "picture-uri", "file://"+file)
+var setLockScreen bool
+
+func init() {
+	flag.BoolVar(&setLockScreen, "set-lockscreen", false, "Set lock screen image")
+}
+
+func systemUpdate(file string) error {
+	if setWallpaper {
+		err := exec.Command("gsettings", "set", "org.gnome.desktop.background", "picture-uri", "file://"+file).Run()
+		if err != nil {
+			return fmt.Errorf("Unable to set wallpaper, %s", err.Error())
+		}
+	}
+
+	if setLockScreen {
+		err := exec.Command("gsettings", "set", "org.gnome.desktop.screensaver", "picture-uri", "file://"+file).Run()
+		if err != nil {
+			return fmt.Errorf("Unable to set lock screen, %s", err.Error())
+		}
+	}
+
+	return nil
 }
