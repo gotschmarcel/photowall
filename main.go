@@ -31,6 +31,7 @@ import (
 const (
 	Version                  = "v1.4.0"
 	InstapaperDefaultDirName = ".instapaper"
+	InstapaperCacheDirName   = "cache"
 )
 
 var (
@@ -39,7 +40,7 @@ var (
 	apiKey        string
 	profile       string
 	tag           string
-	cacheDir      string
+	baseDir       string
 	bgHex         string
 	outputSize    string
 	outputQuality int
@@ -55,6 +56,7 @@ var (
 	outputWidth  int
 	outputHeight int
 	bgColor      color.RGBA
+	cacheDir     string
 
 	wallpaperName = fmt.Sprintf("wallpaper_%d.jpg", time.Now().Unix())
 
@@ -98,7 +100,7 @@ func init() {
 	flag.StringVar(&apiKey, "key", "", "API key")
 	flag.StringVar(&profile, "profile", "", "User profile name")
 	flag.StringVar(&tag, "tag", "", "Tag filter")
-	flag.StringVar(&cacheDir, "dir", "", "Cache and wallpaper directory")
+	flag.StringVar(&baseDir, "dir", "", "Data directory")
 	flag.StringVar(&bgHex, "bg", "FFFFFF", "Background hex color")
 	flag.StringVar(&outputSize, "size", "1920x1080", "Wallpaper size")
 	flag.BoolVar(&squareTiles, "square", false, "Use square tiles")
@@ -195,7 +197,7 @@ func parseBGOption() {
 }
 
 func fallbackDirOption() {
-	if len(cacheDir) > 0 {
+	if len(baseDir) > 0 {
 		return
 	}
 
@@ -204,15 +206,14 @@ func fallbackDirOption() {
 		fatalIf(fmt.Errorf("Unable to get home directory. Try setting -dir yourself"))
 	}
 
-	cacheDir = filepath.Join(usr.HomeDir, InstapaperDefaultDirName)
+	baseDir = filepath.Join(usr.HomeDir, InstapaperDefaultDirName)
 }
 
-func createDir() {
-	log.Printf("Creating data directory %q", cacheDir)
-	err := os.Mkdir(cacheDir, os.ModeDir|0755)
+func createDir(dir string) {
+	log.Printf("Creating directory %q", dir)
+	err := os.Mkdir(dir, os.ModeDir|0755)
 
 	if os.IsExist(err) {
-		log.Printf("Data directory already exists")
 		return
 	}
 
@@ -596,7 +597,10 @@ func main() {
 	}
 
 	// Create the photo and wallpaper directory.
-	createDir()
+	createDir(baseDir)
+
+	cacheDir = filepath.Join(baseDir, InstapaperCacheDirName)
+	createDir(cacheDir)
 
 	// Request recent profile media
 	items, err := api.FetchMediaItems(profile, gridSize, tag, itemLimit)
