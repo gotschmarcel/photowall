@@ -44,7 +44,7 @@ func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string, limit
 			pageSize = limit
 		}
 
-		q.Set("offset", strconv.Itoa(p))
+		q.Set("offset", strconv.Itoa(p*TumblrPageSize))
 		q.Set("limit", strconv.Itoa(pageSize))
 
 		profileURL.RawQuery = q.Encode()
