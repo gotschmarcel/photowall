@@ -29,9 +29,9 @@ import (
 )
 
 const (
-	Version                  = "v1.5.1"
-	InstapaperDefaultDirName = ".instapaper"
-	InstapaperCacheDirName   = "cache"
+	Version        = "v1.6.0"
+	DefaultDirName = ".photostream"
+	CacheDirName   = "cache"
 )
 
 var (
@@ -51,7 +51,6 @@ var (
 	gridSpacing   int
 	itemLimit     int
 	showVersion   bool
-	setWallpaper  bool
 
 	// Parsed values
 	outputWidth  int
@@ -112,12 +111,11 @@ func init() {
 	flag.IntVar(&outputQuality, "q", 90, "Output jpeg quality (1-100)")
 	flag.IntVar(&itemLimit, "limit", 20, "Number of images fetched from api")
 	flag.BoolVar(&showVersion, "v", false, "Show version")
-	flag.BoolVar(&setWallpaper, "set", false, "Set system wallpaper")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: %s -profile PROFILE [OPTIONS]
 
-By default instapaper stores its cached images under ~/.instapaper. If you
+By default photostream stores its cached images under ~/.photostream. If you
 want to change the cache directory pass -dir <your_dir>.
 
 Instagram:
@@ -208,7 +206,7 @@ func fallbackDirOption() {
 		fatalIf(fmt.Errorf("Unable to get home directory. Try setting -dir yourself"))
 	}
 
-	baseDir = filepath.Join(usr.HomeDir, InstapaperDefaultDirName)
+	baseDir = filepath.Join(usr.HomeDir, DefaultDirName)
 }
 
 func createDir(dir string) {
@@ -629,7 +627,7 @@ func main() {
 	// Create the photo and wallpaper directory.
 	createDir(baseDir)
 
-	cacheDir = filepath.Join(baseDir, InstapaperCacheDirName)
+	cacheDir = filepath.Join(baseDir, CacheDirName)
 	createDir(cacheDir)
 
 	// Request recent profile media
@@ -648,10 +646,4 @@ func main() {
 
 	// Create the wallpaper image composed from all downloaded images
 	buildWallpaper(items)
-
-	// Finally update the system wallpaper of the current user
-	wpFile, err := filepath.Abs(filepath.Join(cacheDir, wallpaperName))
-	fatalIf(err)
-
-	fatalIf(systemUpdate(wpFile))
 }
