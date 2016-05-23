@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	Version        = "v1.6.0"
+	Version        = "v1.7.0"
 	DefaultDirName = ".photostream"
 	CacheDirName   = "cache"
 )
@@ -70,8 +70,16 @@ type MediaItem struct {
 	Height int
 }
 
+type APIFetchOptions struct {
+	Profile string
+	Size    int
+	Tag     string
+	Limit   int
+	Square  bool
+}
+
 type API interface {
-	FetchMediaItems(profile string, size int, tag string, limit int) ([]*MediaItem, error)
+	FetchMediaItems(options APIFetchOptions) ([]*MediaItem, error)
 	SupportsOnlySquareImages() bool
 }
 
@@ -124,11 +132,26 @@ Instagram:
 	an API token you can use it without -key. Unfortunately the tag filter
 	is not available for Instagram.
 
+	photostream -profile linxspirationofficial
+
 Tumblr:
 	To use tumblr pass -api tumblr -key api_key. This API requires an
 	API token. To get an api token you must register
 	an API app at https://www.tumblr.com/oauth/apps. This API supports 
 	both squared and non-squared tiles. It also allows more than 20 images.
+
+	photostream -api tumblr -key api_key -profile linxspiration.com -tag women
+
+500px:
+	To use 500px pass -api 500px -key api_key. 500px requies an API token!
+	To get an API token you must register an app at 500px.com. It supports
+	unlimited photos, tag filter, non-square and square tiles as well as
+	user profiles and global features, like popular.
+
+	photostream -api 500px -key api_key -profile popular -tag "Black and White,Animals"
+
+	For available global features and categories take a look at the API documentation
+	of 500px (https://github.com/500px/api-documentation/).
 
 Options:
 `, os.Args[0])
@@ -631,7 +654,13 @@ func main() {
 	createDir(cacheDir)
 
 	// Request recent profile media
-	items, err := api.FetchMediaItems(profile, gridSize, tag, itemLimit)
+	items, err := api.FetchMediaItems(APIFetchOptions{
+		Profile: profile,
+		Size:    gridSize,
+		Tag:     tag,
+		Limit:   itemLimit,
+		Square:  squareTiles,
+	})
 	fatalIf(err)
 
 	if l := len(items); l == 0 {

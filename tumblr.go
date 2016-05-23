@@ -19,12 +19,13 @@ type TumblrAPI struct {
 	BaseURL string
 }
 
-func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string, limit int) ([]*MediaItem, error) {
+func (ta *TumblrAPI) FetchMediaItems(options APIFetchOptions) ([]*MediaItem, error) {
+	limit := options.Limit
 	pages := ceilIntDivision(limit, TumblrPageSize)
 	pageSize := TumblrPageSize
 	var items []*MediaItem
 
-	profileURL, err := url.Parse(fmt.Sprintf(ta.BaseURL, profile))
+	profileURL, err := url.Parse(fmt.Sprintf(ta.BaseURL, options.Profile))
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +37,7 @@ func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string, limit
 
 	// Set tag filter if specified.
 	if len(tag) > 0 {
-		q.Set("tag", tag)
+		q.Set("tag", options.Tag)
 	}
 
 	for p := 0; p < pages; p++ {
@@ -49,7 +50,7 @@ func (ta *TumblrAPI) FetchMediaItems(profile string, size int, tag string, limit
 
 		profileURL.RawQuery = q.Encode()
 
-		itms, err := ta.fetchItemsForPage(profileURL.String(), size)
+		itms, err := ta.fetchItemsForPage(profileURL.String(), options.Size)
 		if err != nil {
 			return nil, err
 		}

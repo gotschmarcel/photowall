@@ -20,8 +20,8 @@ type InstagramAPI struct {
 	urlSizeTpl  string
 }
 
-func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string, limit int) ([]*MediaItem, error) {
-	profileURL := fmt.Sprintf(ia.BaseURL, profile)
+func (ia *InstagramAPI) FetchMediaItems(options APIFetchOptions) ([]*MediaItem, error) {
+	profileURL := fmt.Sprintf(ia.BaseURL, options.Profile)
 
 	resp, err := http.Get(profileURL)
 	if err != nil {
@@ -45,16 +45,16 @@ func (ia *InstagramAPI) FetchMediaItems(profile string, size int, tag string, li
 		return nil, err
 	}
 
-	bestSize := ia.findBestSize(size)
+	bestSize := ia.findBestSize(options.Size)
 	bestSizeURLPart := fmt.Sprintf(ia.urlSizeTpl, bestSize, bestSize)
 
-	if limit > InstagramMediaLimit {
-		limit = InstagramMediaLimit
+	if options.Limit > InstagramMediaLimit {
+		return nil, fmt.Errorf("Instagram supporty only %d photos, limit too high", InstagramMediaLimit)
 	}
 
-	mediaItems := make([]*MediaItem, 0, limit)
+	mediaItems := make([]*MediaItem, 0, options.Limit)
 
-	for _, item := range media.Items[:limit] {
+	for _, item := range media.Items[:options.Limit] {
 		mediaURL := ia.urlSizePart.ReplaceAllString(item.Images.Thumbnail.URL, bestSizeURLPart)
 		mediaItems = append(mediaItems, &MediaItem{item.ID, mediaURL, bestSize, bestSize})
 	}

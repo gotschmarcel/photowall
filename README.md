@@ -1,10 +1,10 @@
 # PhotoStream
 
-Generate grid wallpapers based on photos from *Instagram* or *Tumblr*.
+Generate grid wallpapers based on photo streams from *Instagram, Tumblr or 500px*.
 
 ## Build & Install
 
-Install *PhotoStream* with:
+Install *photostream* with:
 
 ```bash
 $ go get github.com/gotschmarcel/photostream
@@ -16,11 +16,52 @@ The only required option is `-profile`. It specifies the account name from which
 API is *Instagram*.
 
 ```bash
-$ photostream -profile "jondoe"
+$ photostream -profile jondoe
 ```
 
-*PhotoStream* provides a lot more options, such as background color, output size, spacing and more. To
+*photostream* provides a lot of options, such as background color, output size, spacing and more. To
 get an overview of all available options run `$ photostream -h`
+
+### Instagram
+
+The Instagram sandbox allows you to use up to 20 square photos. Non-square photos are not supported! Also the
+`-tag` option is not available.
+
+Example:
+
+```bash
+$ photostream -profile linxspirationofficial
+```
+
+### Tumblr
+
+In order to use the Tumblr API you must register your own application at <https://www.tumblr.com/oauth/apps>.
+After that, use the **Consumer Key** with `-key <consumer_key>` and you're good to go. Tumblr allows you to use unlimited photos as well as the **tag** filter.
+
+Example:
+
+```bash
+$ photostream -api tumblr -key my_consumer_key -profile linxspiration.com -tags architecture
+```
+
+### 500px
+
+500px requires a **Consumer Key**, so you must register an app at <https://500px.com> under `Settings/Applications`.
+Use `-key <consumer_key>` to pass it to *photostream*. 500px allows you to use as unlimited photos. Also the **tag** filter
+can be used to filter specific [**categories**](https://github.com/500px/api-documentation/blob/master/basics/formats_and_terms.md#categories).
+The `-profile` options is a bit more complex with 500px, so take a look at the [global features](https://github.com/500px/api-documentation/blob/master/endpoints/photo/GET_photos.md#global-features) section. To use only a single user pass `-profile "user:<username>"`.
+
+Example:
+
+```bash
+$ photostream -api "500px" -key my_consumer_key -profile popular -tags "Black and White,Animals"
+```
+
+or
+
+```bash
+$ photostream -api "500px" -key my_consumer_key -profile user:mataneshel -tags "Black and White"
+```
 
 ## Cron and System Wallpaper
 
