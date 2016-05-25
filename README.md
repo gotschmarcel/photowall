@@ -1,13 +1,13 @@
-# PhotoStream
+# Photowall
 
 Generate grid wallpapers based on photo streams from *Instagram, Tumblr or 500px*.
 
 ## Build & Install
 
-Install *photostream* with:
+Install *photowall* with:
 
 ```bash
-$ go get github.com/gotschmarcel/photostream
+$ go get github.com/gotschmarcel/photowall
 ```
 
 ## Usage
@@ -16,11 +16,11 @@ The only required option is `-profile`. It specifies the account name from which
 API is *Instagram*.
 
 ```bash
-$ photostream -profile jondoe
+$ photowall -profile jondoe
 ```
 
-*photostream* provides a lot of options, such as background color, output size, spacing and more. To
-get an overview of all available options run `$ photostream -h`
+*photowall* provides a lot of options, such as background color, output size, spacing and more. To
+get an overview of all available options run `$ photowall -h`
 
 ### Instagram
 
@@ -30,7 +30,7 @@ The Instagram sandbox allows you to use up to 20 square photos. Non-square photo
 Example:
 
 ```bash
-$ photostream -profile linxspirationofficial
+$ photowall -profile linxspirationofficial
 ```
 
 ### Tumblr
@@ -41,26 +41,26 @@ After that, use the **Consumer Key** with `-key <consumer_key>` and you're good 
 Example:
 
 ```bash
-$ photostream -api tumblr -key my_consumer_key -profile linxspiration.com -tags architecture
+$ photowall -api tumblr -key my_consumer_key -profile linxspiration.com -tags architecture
 ```
 
 ### 500px
 
 500px requires a **Consumer Key**, so you must register an app at <https://500px.com> under `Settings/Applications`.
-Use `-key <consumer_key>` to pass it to *photostream*. 500px allows you to use as unlimited photos. Also the **tag** filter
+Use `-key <consumer_key>` to pass it to *photowall*. 500px allows you to use as unlimited photos. Also the **tag** filter
 can be used to filter specific [**categories**](https://github.com/500px/api-documentation/blob/master/basics/formats_and_terms.md#categories).
 The `-profile` options is a bit more complex with 500px, so take a look at the [global features](https://github.com/500px/api-documentation/blob/master/endpoints/photo/GET_photos.md#global-features) section. To use only a single user pass `-profile "user:<username>"`.
 
 Example:
 
 ```bash
-$ photostream -api "500px" -key my_consumer_key -profile popular -tags "Black and White,Animals"
+$ photowall -api "500px" -key my_consumer_key -profile popular -tags "Black and White,Animals"
 ```
 
 or
 
 ```bash
-$ photostream -api "500px" -key my_consumer_key -profile user:mataneshel -tags "Black and White"
+$ photowall -api "500px" -key my_consumer_key -profile user:mataneshel -tags "Black and White"
 ```
 
 ## Cron and System Wallpaper
@@ -85,10 +85,10 @@ while [ "${NETWORKUP}" != "-YES-" ]; do
 	CheckForNetwork
 done
 
-datadir="$HOME/.photostream"
+datadir="$HOME/.photowall"
 
-# Run photostream
-photostream -profile linxspirationofficial
+# Run photowall
+photowall -profile linxspirationofficial
 
 # Find new wallpaper file and update system background.
 wallpaper=$(find "$datadir/cache" -iname "wallpaper_*")

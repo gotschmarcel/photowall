@@ -30,7 +30,7 @@ import (
 
 const (
 	Version        = "v1.7.0"
-	DefaultDirName = ".photostream"
+	DefaultDirName = ".photowall"
 	CacheDirName   = "cache"
 )
 
@@ -123,7 +123,7 @@ func init() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: %s -profile PROFILE [OPTIONS]
 
-By default photostream stores its cached images under ~/.photostream. If you
+By default photowall stores its cached images under ~/.photowall. If you
 want to change the cache directory pass -dir <your_dir>.
 
 Instagram:
@@ -132,7 +132,7 @@ Instagram:
 	an API token you can use it without -key. Unfortunately the tag filter
 	is not available for Instagram.
 
-	photostream -profile linxspirationofficial
+	photowall -profile linxspirationofficial
 
 Tumblr:
 	To use tumblr pass -api tumblr -key api_key. This API requires an
@@ -140,7 +140,7 @@ Tumblr:
 	an API app at https://www.tumblr.com/oauth/apps. This API supports 
 	both squared and non-squared tiles. It also allows more than 20 images.
 
-	photostream -api tumblr -key api_key -profile linxspiration.com -tag women
+	photowall -api tumblr -key api_key -profile linxspiration.com -tag women
 
 500px:
 	To use 500px pass -api 500px -key api_key. 500px requies an API token!
@@ -148,7 +148,7 @@ Tumblr:
 	unlimited photos, tag filter, non-square and square tiles as well as
 	user profiles and global features, like popular.
 
-	photostream -api 500px -key api_key -profile popular -tag "Black and White,Animals"
+	photowall -api 500px -key api_key -profile popular -tag "Black and White,Animals"
 
 	For available global features and categories take a look at the API documentation
 	of 500px (https://github.com/500px/api-documentation/).
