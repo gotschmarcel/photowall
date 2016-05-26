@@ -48,7 +48,7 @@ var (
 	squareTiles   bool
 	gridCols      int
 	gridSize      int
-	gridSpacing   int
+	gridSpacing   string
 	itemLimit     int
 	showVersion   bool
 
@@ -57,6 +57,8 @@ var (
 	outputHeight int
 	bgColor      color.RGBA
 	cacheDir     string
+	gridHSpacing int
+	gridVSpacing int
 
 	wallpaperName = fmt.Sprintf("wallpaper_%d.jpg", time.Now().Unix())
 
@@ -113,7 +115,7 @@ func init() {
 	flag.StringVar(&bgPattern, "pattern", "", "Background pattern file")
 	flag.StringVar(&outputSize, "size", "1920x1080", "Wallpaper size")
 	flag.BoolVar(&squareTiles, "square", false, "Use square tiles")
-	flag.IntVar(&gridSpacing, "spacing", 10.0, "Space between images")
+	flag.StringVar(&gridSpacing, "spacing", "10", "Horizontal and vertical space between images (format: <all> or <horizontal>,<vertical>)")
 	flag.IntVar(&gridSize, "grid", 212.0, "Grid size")
 	flag.IntVar(&gridCols, "cols", 5, "Number of image columns")
 	flag.IntVar(&outputQuality, "q", 90, "Output jpeg quality (1-100)")
@@ -217,6 +219,25 @@ func parseBGOption() {
 	bgColor.G = uint8(rgb >> 8 & bitMask)
 	bgColor.B = uint8(rgb & bitMask)
 	bgColor.A = 255
+}
+
+func parseSpacingOption() {
+	var err error
+	parts := strings.Split(gridSpacing, ",")
+
+	gridHSpacing, err = strconv.Atoi(parts[0])
+	if err != nil {
+		fatalIf(fmt.Errorf("Invalid spacing format"))
+	}
+
+	gridVSpacing = gridHSpacing
+
+	if len(parts) == 2 {
+		gridVSpacing, err = strconv.Atoi(parts[1])
+		if err != nil {
+			fatalIf(fmt.Errorf("Invalid spacing format"))
+		}
+	}
 }
 
 func fallbackDirOption() {
@@ -443,8 +464,8 @@ func drawSquareGrid(wp *image.RGBA, items []*MediaItem) {
 	rows := ceilIntDivision(len(items), gridCols)
 	cols := ceilIntDivision(len(items), rows)
 
-	dx := (outputWidth - (cols*(gridSize+gridSpacing) - gridSpacing)) / 2
-	dy := (outputHeight - (rows*(gridSize+gridSpacing) - gridSpacing)) / 2
+	dx := (outputWidth - (cols*(gridSize+gridHSpacing) - gridHSpacing)) / 2
+	dy := (outputHeight - (rows*(gridSize+gridVSpacing) - gridVSpacing)) / 2
 
 	row, col := 0, 0
 
@@ -471,8 +492,8 @@ func drawSquareGrid(wp *image.RGBA, items []*MediaItem) {
 		}
 
 		// Determine position in wallpaper
-		cdx := dx + col*(gridSize+gridSpacing)
-		cdy := dy + row*(gridSize+gridSpacing)
+		cdx := dx + col*(gridSize+gridHSpacing)
+		cdy := dy + row*(gridSize+gridVSpacing)
 
 		// Draw scaled image onto wallpaper
 		dp := image.Pt(cdx, cdy)
@@ -493,7 +514,7 @@ func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
 	cols := gridCols
 	rows := ceilIntDivision(len(items), cols)
 
-	desiredWidth := cols*(gridSize+gridSpacing) - gridSpacing
+	desiredWidth := cols*(gridSize+gridHSpacing) - gridHSpacing
 	desiredHeights := make([]int, rows)
 	aggregatedHeight := 0
 
@@ -518,16 +539,16 @@ func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
 		}
 	}
 
-	baseDx := (outputWidth - (desiredWidth + cols*gridSpacing - gridSpacing)) / 2
+	baseDx := (outputWidth - (desiredWidth + cols*gridHSpacing - gridHSpacing)) / 2
 
 	dx := baseDx
-	dy := (outputHeight - (aggregatedHeight + rows*gridSpacing - gridSpacing)) / 2
+	dy := (outputHeight - (aggregatedHeight + rows*gridVSpacing - gridVSpacing)) / 2
 
 	if dx < 0 || dy < 0 {
 		log.Printf("Warning: grid exceeds the output size, consider specifying a smaller grid size with --grid")
 	}
 
-	desiredRowWidth := desiredWidth + (cols * gridSpacing) - gridSpacing
+	desiredRowWidth := desiredWidth + (cols * gridHSpacing) - gridHSpacing
 	rowWidth := 0
 	row, col = 0, 0
 	for i, item := range items {
@@ -558,15 +579,15 @@ func drawNonSquareGrid(wp *image.RGBA, items []*MediaItem) {
 		bounds := image.Rectangle{dp, dp.Add(img.Bounds().Size())}
 		draw.Draw(wp, bounds, img, img.Bounds().Min, draw.Src)
 
-		dx += (img.Bounds().Dx() + gridSpacing)
+		dx += (img.Bounds().Dx() + gridHSpacing)
 		col++
-		rowWidth += (img.Bounds().Dx() + gridSpacing)
+		rowWidth += (img.Bounds().Dx() + gridHSpacing)
 		if col == cols {
 			col = 0
 			rowWidth = 0
 			row++
 			dx = baseDx
-			dy += (h + gridSpacing)
+			dy += (h + gridVSpacing)
 		}
 	}
 }
@@ -634,6 +655,7 @@ func main() {
 
 	parseSizeOption()
 	parseBGOption()
+	parseSpacingOption()
 	fallbackDirOption()
 
 	api := apiFactory.Create(apiName, apiKey)
